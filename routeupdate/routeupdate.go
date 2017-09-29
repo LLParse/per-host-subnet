@@ -3,7 +3,7 @@ package routeupdate
 import (
 	"github.com/pkg/errors"
 	"github.com/rancher/go-rancher-metadata/metadata"
-	"github.com/rancher/per-host-subnet/routeupdate/hostgw"
+	"github.com/llparse/per-host-subnet/routeupdate/hostgw"
 )
 
 type RouteUpdate interface {
