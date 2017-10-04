@@ -1,8 +1,9 @@
 package hostgw
 
 import (
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	winroute "github.com/llparse/win-route"
 	"github.com/rancher/go-rancher-metadata/metadata"
 )
 
@@ -15,11 +16,13 @@ const (
 
 type HostGw struct {
 	m metadata.Client
+	r winroute.NetRoute
 }
 
 func New(m metadata.Client) (*HostGw, error) {
 	o := &HostGw{
 		m: m,
+		r: winroute.NewNetRoute(),
 	}
 	return o, nil
 }
@@ -28,14 +31,16 @@ func (p *HostGw) Start() {
 	go p.m.OnChange(changeCheckInterval, p.onChangeNoError)
 }
 
+// TODO p.r.Close() when a stop signal is received
+
 func (p *HostGw) onChangeNoError(version string) {
 	if err := p.Reload(); err != nil {
-		logrus.Errorf("Failed to apply host route : %v", err)
+		log.Errorf("Failed to apply host route : %v", err)
 	}
 }
 
 func (p *HostGw) Reload() error {
-	logrus.Debug("HostGW: reload")
+	log.Debug("HostGW: reload")
 	if err := p.configure(); err != nil {
 		return errors.Wrap(err, "Failed to reload hostgw routes")
 	}
@@ -43,7 +48,7 @@ func (p *HostGw) Reload() error {
 }
 
 func (p *HostGw) configure() error {
-	logrus.Debug("HostGW: reload")
+	log.Debug("HostGW: reload")
 
 	selfHost, err := p.m.GetSelfHost()
 	if err != nil {
@@ -54,17 +59,52 @@ func (p *HostGw) configure() error {
 		return errors.Wrap(err, "Failed to get all hosts from metadata")
 	}
 
-	currentRoutes, err := getCurrentRouteEntries(selfHost)
+	currentRoutes, err := p.getCurrentRouteEntries(selfHost)
 	if err != nil {
 		return errors.Wrap(err, "Failed to getCurrentRouteEntries")
 	}
-	desiredRoutes, err := getDesiredRouteEntries(selfHost, allHosts)
+	desiredRoutes, err := p.getDesiredRouteEntries(selfHost, allHosts)
 	if err != nil {
 		return errors.Wrap(err, "Failed to getDesiredRouteEntries")
 	}
-	err = updateRoutes(currentRoutes, desiredRoutes)
+	err = p.updateRoutes(currentRoutes, desiredRoutes)
 	if err != nil {
 		return errors.Wrap(err, "Failed to updateRoutes")
 	}
 	return err
+}
+
+func (p *HostGw) getCurrentRouteEntries(host metadata.Host) (map[string]winroute.IPForwardRow, error) {
+	i := winroute.MustResolveInterface(net.ParseIP(host.AgentIP))
+
+	intf, err := p.r.GetInterfaceByIndex(uint32(i.Index))
+	if err != nil {
+		return nil, err
+	}
+
+	routes, err := p.r.GetRoutes()
+	if err != nil {
+		return nil, err
+	}
+
+	routeEntries := make(map[string]winroute.IPForwardRow)
+	for _, route := range routes {
+		// Ignore routes on other interfaces
+		if intf.InterfaceIndex != route.ForwardIfIndex {
+			continue
+		}
+
+		gwIP := winroute.Inet_ntoa(route.ForwardNextHop, false)
+		routeEntries[gwIP] = route
+	}
+	log.Debugf("%+v", routeEntries)
+	return routeEntries, nil
+}
+
+func (p *HostGw) getDesiredRouteEntries(selfHost metadata.Host, allHosts []metadata.Host) (map[string]winroute.IPForwardRow, error) {
+	return make(map[string]winroute.IPForwardRow), nil
+}
+
+func (p *HostGw) updateRoutes(oldEntries map[string]winroute.IPForwardRow, newEntries map[string]winroute.IPForwardRow) error {
+	return nil
 }

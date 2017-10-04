@@ -13,6 +13,7 @@ go_build() {
   o=bin/$1/$2/per-host-subnet
   if [ "$1" == "windows" ]; then
     ldflags="-X main.VERSION=$VERSION -extldflags -static"
+    o="$o.exe"
   else
     ldflags="-X main.VERSION=$VERSION -linkmode external -extldflags -static"
   fi
