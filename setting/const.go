@@ -1,6 +1,6 @@
 package setting
 
-import "github.com/llparse/per-host-subnet/routeupdate/hostgw"
+import "github.com/rancher/per-host-subnet/routeupdate/hostgw"
 
 const (
 	MetadataURL            = "http://%s/2016-07-29"
