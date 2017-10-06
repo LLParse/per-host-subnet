@@ -61,6 +61,7 @@ func (p *HostGw) configure() error {
 		return errors.Wrap(err, "Failed to get all hosts from metadata")
 	}
 
+	// interface indeces aren't static, do a lookup each pass
 	i := winroute.MustResolveInterface(net.ParseIP(selfHost.AgentIP))
 	iface, err := p.r.GetInterfaceByIndex(uint32(i.Index))
 	if err != nil {
@@ -118,7 +119,8 @@ func (p *HostGw) getDesiredRouteEntries(iface *winroute.IPInterfaceEntry, selfHo
 
 		dest, mask, err := ParseIPNet(h)
 		if err != nil {
-			return nil, err
+			log.WithField("host", h.UUID).Warn(err)
+			continue
 		}
 		r := winroute.IPForwardRow{
 			ForwardDest:    winroute.Inet_aton(dest.String(), false),
@@ -137,7 +139,31 @@ func (p *HostGw) getDesiredRouteEntries(iface *winroute.IPInterfaceEntry, selfHo
 }
 
 func (p *HostGw) updateRoutes(oldEntries map[string]winroute.IPForwardRow, newEntries map[string]winroute.IPForwardRow) error {
-	return nil
+	var e error
+
+	for ip, oe := range oldEntries {
+		ne, ok := newEntries[ip]
+		
+		if ok && oe.Equals(ne) {
+			delete(newEntries, ip)
+		} else {
+			err := p.r.DeleteRoute(&oe)
+			if err != nil {
+				log.Errorf("updateRoute: failed to DeleteRoute, %v", err)
+				e = errors.Wrap(e, err.Error())
+			}
+		}
+	}
+
+	for _, ne := range newEntries {
+		err := p.r.AddRoute(&ne)
+		if err != nil {
+			log.Errorf("updateRoute: failed to AddRoute, %v", err)
+			e = errors.Wrap(e, err.Error())
+		}
+	}
+
+	return e
 }
 
 func ParseIPNet(host metadata.Host) (net.IP, net.IP, error) {
